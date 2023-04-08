@@ -115,6 +115,9 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+    PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
+    PUT(FTKP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
+    coalesce(ptr);
 }
 
 /*
