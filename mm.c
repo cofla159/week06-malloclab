@@ -59,6 +59,21 @@ team_t team = {
 #define GET_NEXT_FTR(p) (FTRP(NEXT_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 #define GET_PREV_FTR(p) (FTRP(PREV_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 
+static void *extend_heap(size_t words)
+{
+    size_t size = words % 2 ? (words + 1) * WSIZE : words * WSIZE;
+    void *start_p = mem_sbrk(size);
+    if (start_p == (void *)-1)
+    {
+        return NULL;
+    }
+    PUT(HDRP(start_p), PACK(size, 0));
+    PUT(FTRP(start_p), PACK(size, 0));
+    PUT(NEXT_BLKP(start_p), PACK(0, 1));
+
+    return coalesce(start_p);
+}
+
 /*
  * mm_init - initialize the malloc package.
  */
