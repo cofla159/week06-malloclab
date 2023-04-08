@@ -65,6 +65,34 @@ int mm_init(void)
     return 0;
 }
 
+int coalesce(void *ptr)
+{
+    size_t prev_allocated = GET_ALLOC(GET_PREV_HDR(ptr));
+    size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
+    size_t now_size = GET_SIZE(HDRP(ptr));
+    if (prev_allocated && !next_allocated)
+    {
+        now_size += GET_SIZE(GET_NEXT_HDR(ptr));
+        PUT(HDRP(ptr), PACK(now_size, 0));
+        PUT(FTRP(ptr), PACK(now_size, 0));
+    }
+    else if (!prev_allocated && next_allocated)
+    {
+        now_size += GET_SIZE(GET_PREV_HDR(ptr));
+        PUT(FTRP(ptr), PACK(now_size, 0));
+        PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
+        ptr = PREV_BLKP(ptr);
+    }
+    else if (!prev_allocated && !next_allocated)
+    {
+        now_size += GET_SIZE(GET_PREV_HDR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
+        PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(now_size, 0));
+        ptr = PREV_BLKP(ptr);
+    }
+    return ptr;
+}
+
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
