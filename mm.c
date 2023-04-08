@@ -64,7 +64,18 @@ team_t team = {
  */
 int mm_init(void)
 {
-    return 0;
+    void *heap_listp = mem_sbrk(4 * WSIZE);
+    if (heap_listp == (void *)-1)
+    {
+        return -1;
+    }
+    PUT(heap_listp, 0);
+    PUT(heap_listp + WSIZE, PACK(DSIZE, 0));
+    PUT(heap_listp + WSIZE * 2, PACK(DSIZE, 0));
+    PUT(heap_listp + WSIZE * 3, PACK(0, 1));
+    heap_listp += DSIZE;
+
+    extend_heap(CHUNKSIZE / WSIZE);
 }
 
 static void *coalesce(void *ptr)
