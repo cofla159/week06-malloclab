@@ -24,15 +24,17 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "team8",
     /* First member's full name */
-    "Harry Bovik",
+    "Chaerim Hwang",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "cofla159@naver.com",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
     ""};
+
+static char *heap_listp;
 
 /* single word (4) or double word (8) alignment */
 #define WSIZE 4
@@ -59,40 +61,6 @@ team_t team = {
 #define GET_NEXT_FTR(p) (FTRP(NEXT_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 #define GET_PREV_FTR(p) (FTRP(PREV_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 
-static void *extend_heap(size_t words)
-{
-    size_t size = words % 2 ? (words + 1) * WSIZE : words * WSIZE;
-    void *start_p = mem_sbrk(size);
-    if (start_p == (void *)-1)
-    {
-        return NULL;
-    }
-    PUT(HDRP(start_p), PACK(size, 0));
-    PUT(FTRP(start_p), PACK(size, 0));
-    PUT(NEXT_BLKP(start_p), PACK(0, 1));
-
-    return coalesce(start_p);
-}
-
-/*
- * mm_init - initialize the malloc package.
- */
-int mm_init(void)
-{
-    void *heap_listp = mem_sbrk(4 * WSIZE);
-    if (heap_listp == (void *)-1)
-    {
-        return -1;
-    }
-    PUT(heap_listp, 0);
-    PUT(heap_listp + WSIZE, PACK(DSIZE, 0));
-    PUT(heap_listp + WSIZE * 2, PACK(DSIZE, 0));
-    PUT(heap_listp + WSIZE * 3, PACK(0, 1));
-    heap_listp += DSIZE;
-
-    extend_heap(CHUNKSIZE / WSIZE);
-}
-
 static void *coalesce(void *ptr)
 {
     size_t prev_allocated = GET_ALLOC(GET_PREV_FTR(ptr));
@@ -106,7 +74,7 @@ static void *coalesce(void *ptr)
     }
     else if (!prev_allocated && next_allocated)
     {
-        now_size += GET_SIZE(GET_PREV_FTR(ptr));
+        now_size += GET_SIZE(GET_PREV_HDR(ptr));
         PUT(FTRP(ptr), PACK(now_size, 0));
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
         ptr = PREV_BLKP(ptr);
@@ -121,21 +89,110 @@ static void *coalesce(void *ptr)
     return ptr;
 }
 
+static void *extend_heap(size_t words)
+{
+    size_t size = words % 2 ? (words + 1) * WSIZE : words * WSIZE;
+    void *start_p = mem_sbrk(size);
+    if (start_p == (void *)-1)
+    {
+        return NULL;
+    }
+    PUT(HDRP(start_p), PACK(size, 0));
+    PUT(FTRP(start_p), PACK(size, 0));
+    PUT(GET_NEXT_HDR(start_p), PACK(0, 1));
+
+    return coalesce(start_p);
+}
+
+/*
+ * mm_init - initialize the malloc package.
+ */
+int mm_init(void)
+{
+    heap_listp = mem_sbrk(4 * WSIZE);
+    if (heap_listp == (void *)-1)
+    {
+        return -1;
+    }
+    PUT(heap_listp, 0);
+    PUT(heap_listp + WSIZE, PACK(DSIZE, 1));
+    PUT(heap_listp + WSIZE * 2, PACK(DSIZE, 1));
+    PUT(heap_listp + WSIZE * 3, PACK(0, 1));
+    heap_listp += DSIZE;
+
+    if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static void *find_fit(size_t asize)
+{
+    char *find_p = heap_listp + DSIZE;
+    while (1)
+    {
+        if (find_p > (char *)mem_heap_hi())
+        {
+            return NULL;
+        }
+        if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
+        {
+            return (void *)find_p;
+        }
+        find_p = NEXT_BLKP(find_p);
+    }
+}
+
+static void place(void *bp, size_t asize)
+{
+    size_t free_size = GET_SIZE(HDRP(bp));
+    if ((free_size - asize) >= (2 * DSIZE))
+    {
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        PUT(GET_NEXT_HDR(bp), PACK(free_size - asize, 0));
+        PUT(GET_NEXT_FTR(bp), PACK(free_size - asize, 0));
+    }
+    else
+    {
+        PUT(HDRP(bp), PACK(free_size, 1));
+        PUT(FTRP(bp), PACK(free_size, 1));
+    }
+}
+
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
  */
+
 void *mm_malloc(size_t size)
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
+    size_t asize;
+    char *bp;
+
+    if (size == 0)
+    {
         return NULL;
+    }
+    if (size <= DSIZE)
+    {
+        asize = 2 * DSIZE;
+    }
     else
     {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
+        asize = DSIZE * ((size + 2 * DSIZE - 1) / DSIZE);
     }
+    if ((bp = find_fit(asize)) != NULL)
+    {
+        place(bp, asize);
+        return bp;
+    }
+    size_t extend_size = asize > CHUNKSIZE ? asize : CHUNKSIZE;
+    if ((bp = (char *)extend_heap(extend_size / WSIZE)) == NULL)
+        return NULL;
+    place(bp, asize);
+    return bp;
 }
 
 /*
