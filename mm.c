@@ -40,22 +40,24 @@ team_t team = {
 #define CHUNKSIZE (1 << 12)
 
 /* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (DSZIE - 1)) & ~0x7)
-#define PACK(size, alloc) (size | alloc)
+#define ALIGN(size) (((size) + (DSIZE - 1)) & ~0x7)
+#define PACK(size, alloc) ((size) | (alloc))
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
-#define GET_SIZE(p) (*p & ~0x7)
-#define GET_ALLOC(p) (*p & 0x1)
+#define GET(p) (*(unsigned int *)(p))
+#define PUT(p, val) (*(unsigned int *)(p) = (val))
 
-#define GET(p) (*(unsigned int *)p)
-#define PUT(p, val) (*(unsigned int *)p = val)
+#define GET_SIZE(p) (GET(p) & ~0x7)
+#define GET_ALLOC(p) (GET(p) & 0x1)
 
-#define HDRP(p) ((char *)p - WSIZE)                            // 헤더 주소
-#define FTRP(p) ((char *)p + GET_SIZE(HDRP(p)) - DSIZE)        // 푸터 주소
-#define NEXT_BLKP(p) ((char *)p + GET_SIZE(HDRP(p)))           // 다음 블록 주소
-#define PREV_BLKP(p) ((char *)p - GET_SIZE((char *)p - DSIZE)) // 이전 블록 주소
-#define GET_NEXT_HDR(p) (HDRP(NEXT_BLKP(ptr)))                 // 다음 블록 헤더값 가져오기
-#define GET_PREV_HDR(p) (HDRP(PREV_BLKP(ptr)))                 // 다음 블록 헤더값 가져오기
+#define HDRP(p) ((char *)(p)-WSIZE)                            // 헤더 주소
+#define FTRP(p) ((char *)(p) + GET_SIZE(HDRP(p)) - DSIZE)      // 푸터 주소
+#define NEXT_BLKP(p) ((char *)(p) + GET_SIZE(HDRP(p)))         // 다음 블록 주소
+#define PREV_BLKP(p) ((char *)(p)-GET_SIZE((char *)(p)-DSIZE)) // 이전 블록 주소
+#define GET_NEXT_HDR(p) (HDRP(NEXT_BLKP(p)))                   // 다음 블록 헤더값 가져오기
+#define GET_PREV_HDR(p) (HDRP(PREV_BLKP(p)))                   // 다음 블록 헤더값 가져오기
+#define GET_NEXT_FTR(p) (FTRP(NEXT_BLKP(p)))                   // 다음 블록 헤더값 가져오기
+#define GET_PREV_FTR(p) (FTRP(PREV_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 
 /*
  * mm_init - initialize the malloc package.
@@ -65,9 +67,9 @@ int mm_init(void)
     return 0;
 }
 
-int coalesce(void *ptr)
+static void *coalesce(void *ptr)
 {
-    size_t prev_allocated = GET_ALLOC(GET_PREV_HDR(ptr));
+    size_t prev_allocated = GET_ALLOC(GET_PREV_FTR(ptr));
     size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
     size_t now_size = GET_SIZE(HDRP(ptr));
     if (prev_allocated && !next_allocated)
@@ -78,16 +80,16 @@ int coalesce(void *ptr)
     }
     else if (!prev_allocated && next_allocated)
     {
-        now_size += GET_SIZE(GET_PREV_HDR(ptr));
+        now_size += GET_SIZE(GET_PREV_FTR(ptr));
         PUT(FTRP(ptr), PACK(now_size, 0));
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
         ptr = PREV_BLKP(ptr);
     }
     else if (!prev_allocated && !next_allocated)
     {
-        now_size += GET_SIZE(GET_PREV_HDR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
+        now_size += GET_SIZE(GET_PREV_FTR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
-        PUT(FTRP(NEXT_BLKP(ptr)), PACK(now_size, 0));
+        PUT(GET_NEXT_FTR(ptr), PACK(now_size, 0));
         ptr = PREV_BLKP(ptr);
     }
     return ptr;
@@ -115,8 +117,9 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-    PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
-    PUT(FTKP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
+    size_t size = GET_SIZE(HDRP(ptr));
+    PUT(HDRP(ptr), PACK(size, 0));
+    PUT(FTRP(ptr), PACK(size, 0));
     coalesce(ptr);
 }
 
