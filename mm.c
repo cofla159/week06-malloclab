@@ -87,10 +87,16 @@ static void *coalesce(void *ptr)
     size_t prev_allocated = GET_ALLOC(GET_PREV_FTR(ptr));
     size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
     size_t now_size = GET_SIZE(HDRP(ptr));
+    void *list_next = find_linked(ptr);
+    void *list_prev = GOTO_PRED(list_next);
 
     if (prev_allocated && next_allocated)
     {
         // 합칠게 없으면 SUCC(list_prev) = ptr, PRED(ptr) = list_prev , PREV(next) = ptr, SUCC(ptr) = list_next
+        PUT(SUCC(list_prev), ptr);
+        PUT(PRED(ptr), list_prev);
+        PUT(PRED(list_next), ptr);
+        PUT(SUCC(ptr), list_next);
     }
     else if (prev_allocated && !next_allocated)
     {
@@ -98,6 +104,10 @@ static void *coalesce(void *ptr)
         now_size += GET_SIZE(GET_NEXT_HDR(ptr));
         PUT(HDRP(ptr), PACK(now_size, 0));
         PUT(FTRP(ptr), PACK(now_size, 0));
+        PUT(SUCC(list_prev), ptr);
+        PUT(PRED(ptr), list_prev);
+        PUT(SUCC(ptr), SUCC(list_next));
+        PUT(SUCC(list_next), ptr);
     }
     else if (!prev_allocated && next_allocated)
     {
@@ -113,6 +123,8 @@ static void *coalesce(void *ptr)
         now_size += GET_SIZE(GET_PREV_FTR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
         PUT(GET_NEXT_FTR(ptr), PACK(now_size, 0));
+        PUT(SUCC(list_prev), SUCC(list_next));
+        PUT(PREV(SUCC(list_next)), list_prev);
         ptr = PREV_BLKP(ptr);
     }
     return ptr;
