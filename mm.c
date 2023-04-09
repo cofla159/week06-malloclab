@@ -69,7 +69,7 @@ static void *find_linked(void *ptr)
     char *now_element = (char *)mem_heap_lo() + DSIZE;
     while (now_element < (char *)mem_heap_hi())
     {
-        if (now_element > ptr) // void를 char랑 비교할때는 변환 안해줘도 되는게.. 맞겠지?
+        if (now_element > (char *)ptr)
         {
             return now_element;
         }
@@ -174,24 +174,24 @@ int mm_init(void)
 
 static void *find_fit(size_t asize)
 {
-    char *start_p; // root가 가리키는 곳에 가서 할당여부&크기 확인.
+    char *find_p = (char *)mem_heap_lo() + DSIZE; // root (힙의 첫번째 pred)
 
-    // 할당할 수 있다면 pred의 succ->succ, succ의 pred->pred 하고 포인터 리턴.
+    // 할당할 수 있다면 포인터 리턴.
     // 할당할 수 없으면 현재 포인터를 *successor로 업데이트 해서 윗줄로 돌아가기.
-    // 링크드리스트 끝(처음 init할 때의 initial block)까지 다 봤는데도 없으면 return NULL.
+    // 링크드리스트 끝까지 다 봤는데도 없으면 return NULL.
 
-    // while (1)
-    // {
-    //     if (find_p > (char *)mem_heap_hi())
-    //     {
-    //         return NULL;
-    //     }
-    //     if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
-    //     {
-    //         return (void *)find_p;
-    //     }
-    //     find_p = NEXT_BLKP(find_p);
-    // }
+    while (1)
+    {
+        if (find_p == NULL)
+        {
+            return NULL;
+        }
+        if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
+        {
+            return (void *)find_p;
+        }
+        find_p = GOTO_SUCC(find_p);
+    }
 }
 
 static void place(void *bp, size_t asize)
