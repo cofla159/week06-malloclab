@@ -2,7 +2,7 @@
   "tasks": [
     {
       "type": "cppbuild",
-      "label": "C/C++: gcc-11 build active file",
+      "label": "build",
       "command": "make",
       "args": [
         "mdriver"

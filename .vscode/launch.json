@@ -9,6 +9,7 @@
       "stopAtEntry": false,
       "externalConsole": false,
       "cwd": "/home/ubuntu/week06-malloclab",
+      "preLaunchTask": "build",
       "program": "/home/ubuntu/week06-malloclab/mdriver",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
