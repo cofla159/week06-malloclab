@@ -62,6 +62,7 @@ team_t team = {
 #define SUCC(p) ((char *)p + WSIZE)                               // succ 주소
 #define GOTO_PRED(p) (GET(PRED(p)))                               // p의 predecessor가 가리키는 곳(주소값)
 #define GOTO_SUCC(p) (GET(SUCC(p)))                               // p의 successor가 가리키는 곳(주소값)
+#define BLKP_BY_SUCC(succ_p) ((char *)(succ_p)-WSIZE)             // successor로 블록 주소(payload 시작점) 가져오기
 
 static void *find_linked(void *ptr)
 {
@@ -123,7 +124,7 @@ static void *coalesce(void *ptr)
         now_size += GET_SIZE(GET_PREV_FTR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
         PUT(GET_NEXT_FTR(ptr), PACK(now_size, 0));
-        PUT(SUCC(list_prev), SUCC(list_next));
+        PUT(SUCC(list_prev), BLKP_BY_SUCC(SUCC(list_next)));
         PUT(PREV(SUCC(list_next)), list_prev);
         ptr = PREV_BLKP(ptr);
     }
@@ -198,15 +199,24 @@ static void place(void *bp, size_t asize)
     size_t free_size = GET_SIZE(HDRP(bp));
     if ((free_size - asize) >= (2 * DSIZE))
     {
+
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         PUT(GET_NEXT_HDR(bp), PACK(free_size - asize, 0));
         PUT(GET_NEXT_FTR(bp), PACK(free_size - asize, 0));
+        // 쪼개진 뒷 블럭 링크드리스트 그 자리에 그대로 넣어주기
+        PUT(SUCC(PRED(bp)), NEXT_BLKP(bp));
+        PUT(PRED(NEXT_BLKP(bp)), PRED(bp));
+        PUT(PRED(SUCC(bp)), NEXT_BLKP(bp));
+        PUT(SUCC(NEXT_BLKP(bp)), BLKP_BY_SUCC(SUCC(bp)));
     }
     else
     {
         PUT(HDRP(bp), PACK(free_size, 1));
         PUT(FTRP(bp), PACK(free_size, 1));
+        // 링크드리스트에서 할당하는 블록 빼주기
+        PUT(SUCC(PRED(bp)), BLKP_BY_SUCC(SUCC(bp)));
+        PUT(PRED(SUCC(bp)), PRED(bp));
     }
 }
 
@@ -252,7 +262,6 @@ void mm_free(void *ptr)
     size_t size = GET_SIZE(HDRP(ptr));
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
-    // predessor랑 successor 업데이트
     coalesce(ptr);
 }
 
