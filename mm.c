@@ -58,36 +58,31 @@ team_t team = {
 #define GET_PREV_HDR(bp) (HDRP(PREV_BLKP(bp)))                    // 다음 블록 헤더값 가져오기
 #define GET_NEXT_FTR(bp) (FTRP(NEXT_BLKP(bp)))                    // 다음 블록 헤더값 가져오기
 #define GET_PREV_FTR(bp) (FTRP(PREV_BLKP(bp)))                    // 다음 블록 헤더값 가져오기
-#define PRED(bp) (bp)                                             // predecessor의 위치는 bp와 일치함
-#define SUCC(bp) (bp + WSIZE)
-#define PRED_PRED(bp) (*GET(bp))         // predecessor의 predecessor가 가지고 있는 값
-#define SUCC_SUCC(bp) (*GET(bp + WSIZE)) // successor의 successor가 가지고 있는 값
+#define PRED(p) ((char *)p)                                       // pred 주소
+#define SUCC(p) ((char *)p + WSIZE)                               // succ 주소
+#define GOTO_PRED(p) (GET(PRED(p)))                               // p의 predecessor가 가리키는 곳(주소값)
+#define GOTO_SUCC(p) (GET(SUCC(p)))                               // p의 successor가 가리키는 곳(주소값)
 
-// allocate할 때는 사용하는 블록은 링크드리스트에서 빼버리고 pred의 succ->succ 가리키고 succ->pred->pred 가리켜야 함
-// free할 때는 coalesce가 알아서 해줄거임
-
-static void *find_linked_prev(void *ptr)
+static void *find_linked(void *ptr)
 {
-    // ptr의 prev에서 시작.
-    // prev가 free면 그 주소 리턴.
-    // alloc이면 하나 더 prev로 업데이트.
-    // mem_heap_lo까지 갔는데 없으면 root 리턴.
-}
-
-static void *find_linked_next(void *ptr)
-{
-    // ptr의 next에서 시작.
-    // next가 free면 그 주소 리턴.
-    // alloc이면 하나 더 next로 업데이트.
-    // mem_heap_hi까지 갔는데 없으면 null 리턴.
+    char *now_element = (char *)mem_heap_lo() + DSIZE;
+    while (now_element < (char *)mem_heap_hi())
+    {
+        if (now_element > ptr) // void를 char랑 비교할때는 변환 안해줘도 되는게.. 맞겠지?
+        {
+            return now_element;
+        }
+        now_element = GOTO_SUCC(ptr);
+    }
+    return NULL; // 끝까지 갔는데 없으면 이 블록이 링크드리스트의 끝에 붙는거
 }
 
 static void *coalesce(void *ptr)
 {
     // 합치고 난 뒤에 predecessor랑 successor업데이트 해줘야 함.
     // coalesce는 물리적으로 앞뒤로 합치는거고 링크드리스트도 앞뒤로 합침 필요.
-    // 넣을 위치 찾을 함수 필요. ptr의 앞쪽에 있는 free block이랑 뒤쪽에 있는 free block 찾기.
-    // = list_prev, list_next
+    // 넣을 위치 찾을 함수 필요. 링크드리스트 root부터 보면서 값이 ptr보다 큰거 리턴 = list_next
+    // list_prev = PRED(list_next)
 
     size_t prev_allocated = GET_ALLOC(GET_PREV_FTR(ptr));
     size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
@@ -132,7 +127,6 @@ static void *extend_heap(size_t words)
         return NULL;
     }
     // 새롭게 할당되는 블록도 free니까 predecessor랑 successor가 있음
-    // succ = null이고 pred 링크드리스트 마지막 블록
     // coalesce가 다 해줄거임
     PUT(HDRP(start_p), PACK(size, 0));
     PUT(FTRP(start_p), PACK(size, 0));
@@ -169,7 +163,7 @@ static void *find_fit(size_t asize)
 {
     char *start_p; // root가 가리키는 곳에 가서 할당여부&크기 확인.
 
-    // 할당할 수 있다면 predecessor와 successor 포인터를 업데이트 해준 뒤 포인터 리턴.
+    // 할당할 수 있다면 pred의 succ->succ, succ의 pred->pred 하고 포인터 리턴.
     // 할당할 수 없으면 현재 포인터를 *successor로 업데이트 해서 윗줄로 돌아가기.
     // 링크드리스트 끝(처음 init할 때의 initial block)까지 다 봤는데도 없으면 return NULL.
 
