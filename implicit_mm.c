@@ -34,6 +34,8 @@ team_t team = {
     /* Second member's email address (leave blank if none) */
     ""};
 
+static char *heap_listp;
+
 /* single word (4) or double word (8) alignment */
 #define WSIZE 4
 #define DSIZE 8
@@ -52,21 +54,18 @@ team_t team = {
 
 #define HDRP(p) ((char *)(p)-WSIZE)                            // 헤더 주소
 #define FTRP(p) ((char *)(p) + GET_SIZE(HDRP(p)) - DSIZE)      // 푸터 주소
-#define NEXT_BLKP(p) ((char *)(p) + GET_SIZE(HDRP(p)))         // (물리적) 다음 블록 주소
-#define PREV_BLKP(p) ((char *)(p)-GET_SIZE((char *)(p)-DSIZE)) // (물리적) 이전 블록 주소
+#define NEXT_BLKP(p) ((char *)(p) + GET_SIZE(HDRP(p)))         // 다음 블록 주소
+#define PREV_BLKP(p) ((char *)(p)-GET_SIZE((char *)(p)-DSIZE)) // 이전 블록 주소
 #define GET_NEXT_HDR(p) (HDRP(NEXT_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 #define GET_PREV_HDR(p) (HDRP(PREV_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 #define GET_NEXT_FTR(p) (FTRP(NEXT_BLKP(p)))                   // 다음 블록 헤더값 가져오기
 #define GET_PREV_FTR(p) (FTRP(PREV_BLKP(p)))                   // 다음 블록 헤더값 가져오기
-#define PRED_PRED(p) (*GET(p))                                 // predecessor의 predecessor가 가지고 있는 값
-#define SUCC_SUCC(p) (*GET(p + WSIZE))                         // successor의 successor가 가지고 있는 값
 
 static void *coalesce(void *ptr)
 {
     size_t prev_allocated = GET_ALLOC(GET_PREV_FTR(ptr));
     size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
     size_t now_size = GET_SIZE(HDRP(ptr));
-    // 합치고 난 뒤에 predecessor랑 successor 업데이트 해줘야 함.
     if (prev_allocated && !next_allocated)
     {
         now_size += GET_SIZE(GET_NEXT_HDR(ptr));
@@ -110,16 +109,16 @@ static void *extend_heap(size_t words)
  */
 int mm_init(void)
 {
-    char *heap_startp = mem_sbrk(4 * WSIZE);
-    if (heap_startp == (void *)-1)
+    heap_listp = mem_sbrk(4 * WSIZE);
+    if (heap_listp == (void *)-1)
     {
         return -1;
     }
-    PUT(heap_startp, 0);                          // 패딩
-    PUT(heap_startp + WSIZE, PACK(DSIZE, 1));     // 프롤로그 헤더
-    PUT(heap_startp + WSIZE * 2, PACK(DSIZE, 1)); // 프롤로그 푸터
-    // 여기다가 initial predecessor랑 successor가 추가되어야 함.
-    PUT(heap_startp + WSIZE * 3, PACK(0, 1)); // 에필로그
+    PUT(heap_listp, 0);
+    PUT(heap_listp + WSIZE, PACK(DSIZE, 1));
+    PUT(heap_listp + WSIZE * 2, PACK(DSIZE, 1));
+    PUT(heap_listp + WSIZE * 3, PACK(0, 1));
+    heap_listp += DSIZE;
 
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
     {
@@ -130,38 +129,19 @@ int mm_init(void)
 
 static void *find_fit(size_t asize)
 {
-    char *start_p = mem_heap_lo() + DSIZE; // root(init할 때의 successor)
-
-    // root가 가리키는 곳에 가서 할당여부&크기 확인.
-    // 할당할 수 있다면 predecessor와 successor 포인터를 업데이트 해준 뒤 포인터 리턴.
-    // 할당할 수 없으면 현재 포인터를 *successor로 업데이트 해서 윗줄로 돌아가기.
-    // 링크드리스트 끝(처음 init할 때의 initial block)까지 다 봤는데도 없으면 return NULL.
-
-    // while (1)
-    // {
-    //     if (find_p > (char *)mem_heap_hi())
-    //     {
-    //         return NULL;
-    //     }
-    //     if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
-    //     {
-    //         return (void *)find_p;
-    //     }
-    //     find_p = NEXT_BLKP(find_p);
-    // }
-
-    // while (1)
-    // {
-    //     if (find_p > (char *)mem_heap_hi())
-    //     {
-    //         return NULL;
-    //     }
-    //     if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
-    //     {
-    //         return (void *)find_p;
-    //     }
-    //     find_p = NEXT_BLKP(find_p);
-    // }
+    char *find_p = heap_listp + DSIZE;
+    while (1)
+    {
+        if (find_p > (char *)mem_heap_hi())
+        {
+            return NULL;
+        }
+        if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
+        {
+            return (void *)find_p;
+        }
+        find_p = NEXT_BLKP(find_p);
+    }
 }
 
 static void place(void *bp, size_t asize)
@@ -201,7 +181,7 @@ void *mm_malloc(size_t size)
     }
     else
     {
-        asize = ALIGN(size + DSIZE);
+        asize = DSIZE * ((size + 2 * DSIZE - 1) / DSIZE);
     }
     if ((bp = find_fit(asize)) != NULL)
     {
@@ -223,7 +203,6 @@ void mm_free(void *ptr)
     size_t size = GET_SIZE(HDRP(ptr));
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
-    // predessor랑 successor 업데이트
     coalesce(ptr);
 }
 
