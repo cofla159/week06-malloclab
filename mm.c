@@ -214,17 +214,39 @@ static void place(void *bp, size_t asize)
     size_t free_size = GET_SIZE(HDRP(bp));
     if ((free_size - asize) >= (2 * DSIZE))
     {
-
+        pointer_t *hdrp_bf = HDRP(bp);
+        pointer_t *ftrp_bf = FTRP(bp);
+        pointer_t *get_next_hdr_bf = GET_NEXT_HDR(bp);
+        pointer_t *get_next_ftr_bf = GET_NEXT_FTR(bp);
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         PUT(GET_NEXT_HDR(bp), PACK(free_size - asize, 0));
         PUT(GET_NEXT_FTR(bp), PACK(free_size - asize, 0));
+        pointer_t *hdrp = HDRP(bp);
+        pointer_t *ftrp = FTRP(bp);
+        pointer_t *get_next_hdr = GET_NEXT_HDR(bp);
+        pointer_t *get_next_ftr = GET_NEXT_FTR(bp);
         // 쪼개진 뒷 블럭 링크드리스트 그 자리에 그대로 넣어주기
         // 링크드리스트에서 블록 빼고 작아진 주소값 그대로 그 자리에
-        PUT_ADD(SUCC(PRED(bp)), NEXT_BLKP(bp)); // 루트의 succ에 현재 블록 넣어주기
-        PUT_ADD(PRED(NEXT_BLKP(bp)), PRED(bp));
-        PUT_ADD(PRED(SUCC(bp)), NEXT_BLKP(bp));               // 여기 고쳐주기(SUCC(bp)=NULL)일때
-        PUT_ADD(SUCC(NEXT_BLKP(bp)), BLKP_BY_SUCC(SUCC(bp))); // 근데 널이 안들어간 것 같음
+        pointer_t *should_be_initial_succ = SUCC(GOTO_PRED(bp));
+        PUT_ADD(SUCC(GOTO_PRED(bp)), NEXT_BLKP(bp)); // 이전 리스트의 succ에 현재 블록 넣어주기
+        PUT_ADD(PRED(NEXT_BLKP(bp)), GOTO_PRED(bp)); // 쪼개진 블록 pred에 원래의 pred
+        pointer_t *goto_succ = GOTO_SUCC(bp);
+        pointer_t *next_bp = NEXT_BLKP(bp);
+        if (GOTO_SUCC(bp) >= (char *)mem_heap_hi() + 1 || !GOTO_SUCC(bp)) // 여기 조건이 이게 아닐텐데..
+        {
+            PUT_ADD(SUCC(NEXT_BLKP(bp)), NULL);
+        }
+        else
+        {
+            PUT_ADD(PRED(SUCC(bp)), NEXT_BLKP(bp));
+            PUT_ADD(SUCC(NEXT_BLKP(bp)), BLKP_BY_SUCC(SUCC(bp)));
+        }
+        pointer_t *succ_pred = SUCC(PRED(bp));
+        pointer_t *pred_next = PRED(NEXT_BLKP(bp));
+        pointer_t *pred_succ = PRED(SUCC(bp));
+        pointer_t *succ_next = SUCC(NEXT_BLKP(bp));
+        printf("d");
     }
     else
     {
@@ -243,7 +265,6 @@ static void place(void *bp, size_t asize)
 
 void *mm_malloc(size_t size)
 {
-    printf("malloc called");
     size_t asize;
     char *bp;
 
@@ -276,7 +297,6 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-    printf("free called");
     size_t size = GET_SIZE(HDRP(ptr));
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
