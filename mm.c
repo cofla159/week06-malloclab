@@ -74,7 +74,7 @@ static void *find_linked(void *ptr)
     while (1)
     {
         // pointer_t *goto_succ = GOTO_SUCC(now_element);
-        if (now_element > (pointer_t *)ptr || !GOTO_SUCC(now_element))
+        if (!GOTO_SUCC(now_element) || GOTO_SUCC(now_element) > ptr)
         {
             return now_element;
         }
@@ -230,6 +230,8 @@ static void place(void *bp, size_t asize)
         }
         else
         {
+            pointer_t *goto_succ = GOTO_SUCC(bp);
+            pointer_t *next_blk = NEXT_BLKP(bp);
             PUT_ADD(PRED(GOTO_SUCC(bp)), NEXT_BLKP(bp));
             PUT_ADD(SUCC(NEXT_BLKP(bp)), GOTO_SUCC(bp));
         }
