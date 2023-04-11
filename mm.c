@@ -67,13 +67,15 @@ typedef __POINTER_TYPE__ pointer_t;
 #define GOTO_SUCC(p) (GET(SUCC(p)))                               // p의 successor가 가리키는 곳(주소값)
 #define BLKP_BY_SUCC(succ_p) ((char *)(succ_p)-WSIZE)             // successor로 블록 주소(payload 시작점) 가져오기
 
+// 48할당할 때 find_fit에서 무한루프 빠짐. 링크드리스트에 연결된게 없어서 initial block의 succ 타려고 하면 0 나와야되는데 두번째 2048 나옴. 그러면 두번째 2048 할당했을 때 링크드리스트 연결을 끊어줬어야 되는데 안끊어진듯
 static void *find_linked(void *ptr)
 {
     pointer_t *now_element = (pointer_t *)(mem_heap_lo() + DSIZE);
     while (1)
     {
-        pointer_t *now_suc = GOTO_SUCC(now_element);
+        // pointer_t *now_suc = GOTO_SUCC(now_element);
         if (now_element > (pointer_t *)ptr || !GOTO_SUCC(now_element) || GOTO_SUCC(now_element) == ptr)
+        // if ()
         {
             return now_element;
         }
@@ -94,7 +96,7 @@ static void *coalesce(void *ptr)
     size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
     size_t now_size = GET_SIZE(HDRP(ptr));
     pointer_t *list_prev = find_linked(ptr);
-    pointer_t *list_next = GOTO_SUCC(list_prev) ? GOTO_PRED(list_prev) : NULL;
+    pointer_t *list_next = GOTO_SUCC(list_prev) ? GOTO_SUCC(list_prev) : 0;
 
     if (prev_allocated && next_allocated)
     {
@@ -176,7 +178,7 @@ int mm_init(void)
     }
     PUT(heap_startp, 0);                                         // 패딩
     PUT(heap_startp + WSIZE, PACK(2 * DSIZE, 1));                // 프롤로그 헤더
-    PUT(heap_startp + WSIZE * 2, NULL);                          // 힙의 첫번째 predecessor = root 역할
+    PUT(heap_startp + WSIZE * 2, 0);                             // 힙의 첫번째 predecessor = root 역할
     PUT_ADD(heap_startp + WSIZE * 3, (heap_startp + 6 * WSIZE)); // successor
     PUT(heap_startp + WSIZE * 4, PACK(2 * DSIZE, 1));            // 프롤로그 푸터
     PUT(heap_startp + WSIZE * 5, PACK(0, 1));                    // 에필로그
@@ -197,6 +199,8 @@ static void *find_fit(size_t asize)
 
     while (1)
     {
+        // initial successor가 다음 free block을 가리켜야 하는데 그냥 물리적 다음 블록을 가리킴
+        find_p = (pointer_t *)GOTO_SUCC(find_p);
         if (!find_p)
         {
             return NULL;
@@ -205,7 +209,6 @@ static void *find_fit(size_t asize)
         {
             return (void *)find_p;
         }
-        find_p = (pointer_t *)GOTO_SUCC(find_p);
     }
 }
 
@@ -214,47 +217,58 @@ static void place(void *bp, size_t asize)
     size_t free_size = GET_SIZE(HDRP(bp));
     if ((free_size - asize) >= (2 * DSIZE))
     {
-        pointer_t *hdrp_bf = HDRP(bp);
-        pointer_t *ftrp_bf = FTRP(bp);
-        pointer_t *get_next_hdr_bf = GET_NEXT_HDR(bp);
-        pointer_t *get_next_ftr_bf = GET_NEXT_FTR(bp);
+        // place가 통채로 잘못된 듯.
+        // 크기 2104 블럭이랑 2008 블럭이 서로를 가리켜서 find가 빙글빙글 도는 듯.
+
+        // pointer_t *hdrp_bf = HDRP(bp);
+        // pointer_t *ftrp_bf = FTRP(bp);
+        // pointer_t *get_next_hdr_bf = GET_NEXT_HDR(bp);
+        // pointer_t *get_next_ftr_bf = GET_NEXT_FTR(bp);
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         PUT(GET_NEXT_HDR(bp), PACK(free_size - asize, 0));
         PUT(GET_NEXT_FTR(bp), PACK(free_size - asize, 0));
-        pointer_t *hdrp = HDRP(bp);
-        pointer_t *ftrp = FTRP(bp);
-        pointer_t *get_next_hdr = GET_NEXT_HDR(bp);
-        pointer_t *get_next_ftr = GET_NEXT_FTR(bp);
+        // pointer_t *hdrp = HDRP(bp);
+        // pointer_t *ftrp = FTRP(bp);
+        // pointer_t *get_next_hdr = GET_NEXT_HDR(bp);
+        // pointer_t *get_next_ftr = GET_NEXT_FTR(bp);
         // 쪼개진 뒷 블럭 링크드리스트 그 자리에 그대로 넣어주기
         // 링크드리스트에서 블록 빼고 작아진 주소값 그대로 그 자리에
-        pointer_t *should_be_initial_succ = SUCC(GOTO_PRED(bp));
+        // pointer_t *should_be_initial_succ = SUCC(GOTO_PRED(bp));
         PUT_ADD(SUCC(GOTO_PRED(bp)), NEXT_BLKP(bp)); // 이전 리스트의 succ에 현재 블록 넣어주기
         PUT_ADD(PRED(NEXT_BLKP(bp)), GOTO_PRED(bp)); // 쪼개진 블록 pred에 원래의 pred
-        pointer_t *goto_succ = GOTO_SUCC(bp);
-        pointer_t *next_bp = NEXT_BLKP(bp);
-        if (GOTO_SUCC(bp) >= (char *)mem_heap_hi() + 1 || !GOTO_SUCC(bp)) // 여기 조건이 이게 아닐텐데..
+        // pointer_t *goto_succ = GOTO_SUCC(bp);
+        // pointer_t *next_bp = NEXT_BLKP(bp);
+        // if (GOTO_SUCC(bp) >= (char *)mem_heap_hi() + 1 || !GOTO_SUCC(bp)) // 여기 조건이 이게 아닐텐데..
+        if (!GOTO_SUCC(bp))
         {
-            PUT_ADD(SUCC(NEXT_BLKP(bp)), NULL);
+            PUT_ADD(SUCC(NEXT_BLKP(bp)), 0);
         }
         else
         {
-            PUT_ADD(PRED(SUCC(bp)), NEXT_BLKP(bp));
-            PUT_ADD(SUCC(NEXT_BLKP(bp)), BLKP_BY_SUCC(SUCC(bp)));
+            PUT_ADD(PRED(GOTO_SUCC(bp)), NEXT_BLKP(bp));
+            PUT_ADD(SUCC(NEXT_BLKP(bp)), GOTO_SUCC(bp));
         }
-        pointer_t *succ_pred = SUCC(PRED(bp));
-        pointer_t *pred_next = PRED(NEXT_BLKP(bp));
-        pointer_t *pred_succ = PRED(SUCC(bp));
-        pointer_t *succ_next = SUCC(NEXT_BLKP(bp));
-        printf("d");
+        // pointer_t *succ_pred = SUCC(PRED(bp));
+        // pointer_t *pred_next = PRED(NEXT_BLKP(bp));
+        // pointer_t *pred_succ = PRED(SUCC(bp));
+        // pointer_t *succ_next = SUCC(NEXT_BLKP(bp));
+        // printf("d");
     }
     else
     {
         PUT(HDRP(bp), PACK(free_size, 1));
         PUT(FTRP(bp), PACK(free_size, 1));
         // 링크드리스트에서 할당하는 블록 빼주기
-        PUT_ADD(SUCC(PRED(bp)), BLKP_BY_SUCC(SUCC(bp)));
-        PUT_ADD(PRED(SUCC(bp)), PRED(bp));
+        if (!GOTO_SUCC(bp))
+        {
+            PUT_ADD(GOTO_PRED(bp), 0);
+        }
+        else
+        {
+            PUT_ADD(PRED(GOTO_SUCC(bp)), GOTO_PRED(bp));
+            PUT_ADD(SUCC(GOTO_PRED(bp)), GOTO_SUCC(bp));
+        }
     }
 }
 
