@@ -5,7 +5,7 @@
       "name": "C/C++ Runner: Debug Session",
       "type": "cppdbg",
       "request": "launch",
-      "args": [],
+      "args": ["-f", "short1-bal.rep"],
       "stopAtEntry": false,
       "externalConsole": false,
       "cwd": "/home/ubuntu/week06-malloclab",
