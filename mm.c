@@ -85,12 +85,13 @@ static void *coalesce(void *ptr)
     size_t prev_allocated = GET_ALLOC(GET_PREV_FTR(ptr));
     size_t next_allocated = GET_ALLOC(GET_NEXT_HDR(ptr));
     size_t now_size = GET_SIZE(HDRP(ptr));
-    pointer_t *list_prev = find_linked(ptr);
-    pointer_t *list_next = GOTO_SUCC(list_prev);
 
     if (prev_allocated && next_allocated)
     {
         // 합칠게 없으면 SUCC(list_prev) = ptr, PRED(ptr) = list_prev , PREV(next) = ptr, SUCC(ptr) = list_next
+        pointer_t *list_prev = find_linked(ptr);
+        pointer_t *list_next = GOTO_SUCC(list_prev);
+
         PUT_ADD(SUCC(list_prev), ptr);
         PUT_ADD(PRED(ptr), list_prev);
         if (list_next)
@@ -103,6 +104,9 @@ static void *coalesce(void *ptr)
     {
         // 다음거랑 합치면 list_next가 bp랑 합쳐지기 때문에 SUCC(ptr)에 GOTO_SUCC(list_next) 넣어야 함
         now_size += GET_SIZE(GET_NEXT_HDR(ptr));
+        pointer_t *list_prev = GOTO_PRED(NEXT_BLKP(ptr));
+        pointer_t *list_next = NEXT_BLKP(ptr);
+
         PUT(HDRP(ptr), PACK(now_size, 0));
         PUT(FTRP(ptr), PACK(now_size, 0));
         PUT_ADD(SUCC(list_prev), ptr);
@@ -125,6 +129,8 @@ static void *coalesce(void *ptr)
     {
         // 양쪽 다 합치면 SUCC(list_prev) = SUCC(list_next), PREV(SUCC(list_next)) = list_prev
         now_size += GET_SIZE(GET_PREV_FTR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
+        pointer_t *list_prev = PREV_BLKP(ptr);
+        pointer_t *list_next = NEXT_BLKP(ptr);
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
         PUT(GET_NEXT_FTR(ptr), PACK(now_size, 0));
         PUT_ADD(SUCC(list_prev), GOTO_SUCC(list_next));
