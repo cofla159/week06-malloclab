@@ -130,7 +130,7 @@ static void *coalesce(void *ptr)
         PUT_ADD(SUCC(list_prev), GOTO_SUCC(list_next));
         if (GOTO_SUCC(list_next))
         {
-            PUT_ADD(PRED(GOTO_SUCC(list_next)), GOTO_PRED(list_prev));
+            PUT_ADD(PRED(GOTO_SUCC(list_next)), list_prev);
         }
         ptr = PREV_BLKP(ptr);
     }
