@@ -67,14 +67,13 @@ typedef __POINTER_TYPE__ pointer_t;
 #define GOTO_SUCC(bp) (pointer_t *)(GET(SUCC(bp)))                // p의 successor가 가리키는 곳(주소값)
 #define BLKP_BY_SUCC(succ_p) ((char *)(succ_p)-WSIZE)             // successor로 블록 주소(payload 시작점) 가져오기
 
-// 48할당할 때 find_fit에서 무한루프 빠짐. 링크드리스트에 연결된게 없어서 initial block의 succ 타려고 하면 0 나와야되는데 두번째 2048 나옴. 그러면 두번째 2048 할당했을 때 링크드리스트 연결을 끊어줬어야 되는데 안끊어진듯
 static void *find_linked(void *ptr)
 {
     pointer_t *now_element = (pointer_t *)(mem_heap_lo() + DSIZE);
     while (1)
     {
         // pointer_t *goto_succ = GOTO_SUCC(now_element);
-        if (!GOTO_SUCC(now_element) || GOTO_SUCC(now_element) > ptr)
+        if (!GOTO_SUCC(now_element) || GOTO_SUCC(now_element) > (pointer_t *)ptr)
         {
             return now_element;
         }
@@ -109,16 +108,16 @@ static void *coalesce(void *ptr)
     }
     else if (prev_allocated && !next_allocated)
     {
-        // 다음거랑 합치면 SUCC(list_prev) = ptr, PRED(ptr) = list_prev, SUCC(ptr) = SUCC(list_next), PRED(SUCC(list_next)) = ptr
+        // 다음거랑 합치면 list_next가 bp랑 합쳐지기 때문에 SUCC(ptr)에 GOTO_SUCC(list_next) 넣어야 함
         now_size += GET_SIZE(GET_NEXT_HDR(ptr));
         PUT(HDRP(ptr), PACK(now_size, 0));
         PUT(FTRP(ptr), PACK(now_size, 0));
         PUT_ADD(SUCC(list_prev), ptr);
         PUT_ADD(PRED(ptr), list_prev);
-        PUT_ADD(SUCC(ptr), SUCC(list_next));
-        if (list_next)
+        PUT_ADD(SUCC(ptr), GOTO_SUCC(list_next));
+        if (GOTO_SUCC(list_next))
         { //?
-            PUT_ADD(SUCC(list_next), ptr);
+            PUT_ADD(SUCC(GOTO_SUCC(list_next)), ptr);
         }
     }
 
@@ -136,10 +135,10 @@ static void *coalesce(void *ptr)
         now_size += GET_SIZE(GET_PREV_FTR(ptr)) + GET_SIZE(GET_NEXT_HDR(ptr));
         PUT(GET_PREV_HDR(ptr), PACK(now_size, 0));
         PUT(GET_NEXT_FTR(ptr), PACK(now_size, 0));
-        // PUT_ADD(SUCC(list_prev), GOTO_SUCC(list_next));
-        if (list_next)
+        PUT_ADD(SUCC(GOTO_PRED(list_prev)), GOTO_SUCC(list_next));
+        if (GOTO_SUCC(list_next))
         {
-            PUT_ADD(PRED(SUCC(list_next)), list_prev);
+            PUT_ADD(PRED(GOTO_SUCC(list_next)), GOTO_PRED(list_prev));
         }
         ptr = PREV_BLKP(ptr);
     }
@@ -185,7 +184,7 @@ int mm_init(void)
     }
     return 0;
 }
-
+// 10번째 할당할 때 extend해줘야 하는데 안해줌. find_fit리턴을 잘못 하는 듯?
 static void *find_fit(size_t asize)
 {
     pointer_t *find_p = (pointer_t *)(mem_heap_lo() + DSIZE);
@@ -197,6 +196,8 @@ static void *find_fit(size_t asize)
         {
             return NULL;
         }
+        // int allocated = GET_ALLOC(HDRP(find_p));
+        // int size = GET_SIZE(HDRP(find_p));
         if (!GET_ALLOC(HDRP(find_p)) && GET_SIZE(HDRP(find_p)) >= asize)
         {
             return (void *)find_p;
@@ -206,6 +207,9 @@ static void *find_fit(size_t asize)
 
 static void place(void *bp, size_t asize)
 {
+    // pointer_t *hdrp = HDRP(bp);
+    // unsigned int get_hdrp = GET(hdrp);
+    // int get_size = get_hdrp & ~0x7;
     size_t free_size = GET_SIZE(HDRP(bp));
     if ((free_size - asize) >= (2 * DSIZE))
     {
@@ -230,10 +234,11 @@ static void place(void *bp, size_t asize)
         }
         else
         {
-            pointer_t *goto_succ = GOTO_SUCC(bp);
-            pointer_t *next_blk = NEXT_BLKP(bp);
+            // pointer_t *goto_succ = GOTO_SUCC(bp);
+            // pointer_t *next_blk = NEXT_BLKP(bp);
             PUT_ADD(PRED(GOTO_SUCC(bp)), NEXT_BLKP(bp));
             PUT_ADD(SUCC(NEXT_BLKP(bp)), GOTO_SUCC(bp));
+            // pointer_t *succ_next_blkp = SUCC(NEXT_BLKP(bp));
         }
         // pointer_t *succ_pred = SUCC(PRED(bp));
         // pointer_t *pred_next = PRED(NEXT_BLKP(bp));
