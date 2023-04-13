@@ -56,6 +56,22 @@ typedef __POINTER_TYPE__ pointer_t;
 
 static pointer_t segregated_free_list[30];
 
+static int find_free_index(size_t adjust_size)
+{
+    for (int i = 0; i < 30; i++)
+    {
+        if (adjust_size <= (int)(1 << (i + 3)))
+        {
+            if (segregated_free_list[i] == NULL)
+            {
+                continue;
+            }
+            return i;
+        }
+    }
+    return 0;
+}
+
 static int find_index(size_t adjust_size)
 {
     for (int i = 0; i < 30; i++)
@@ -66,32 +82,65 @@ static int find_index(size_t adjust_size)
         }
     }
 }
-
 static void insert_free_list(int index, void *bp)
 {
     PUT(NEXT(bp), segregated_free_list[index]);
     segregated_free_list[index] = bp;
 }
 
-static pointer_t delete_free_list(int index, size_t adjust_size)
+static void init_header(void *bp, size_t size)
+{
+    PUT(HDRP(bp), PACK(size, 1));
+}
+
+static pointer_t pop_free_list(int index)
 {
     pointer_t allocated_bp = segregated_free_list[index];
     pointer_t next_bp = GET(NEXT(segregated_free_list[index]));
-    PUT(HDRP(segregated_free_list[index]), PACK(adjust_size, 1));
+    init_header(allocated_bp, 1);
     segregated_free_list[index] = next_bp;
     return allocated_bp;
 }
 
-static void *extend_heap(size_t words, size_t adjust_size)
+static void *coalesce(void *ptr, int idx, int size)
 {
+    // 링크드리스트 타면서 ptr-size나 ptr+size 발견하면
+    // 삭제하고 idx+1 리스트에 넣고 break
+    // 끝까지 봤는데 없으면 지금 블록만 idx에 넣기
+    pointer_t linked_root = segregated_free_list[idx];
+    while (1)
+    {
+        if (linked_root == NULL || (pointer_t)GET(NEXT(linked_root)) == NULL)
+        {
+            insert_free_list(idx, ptr);
+            return ptr;
+        }
+        if ((pointer_t)GET(NEXT(linked_root)) == (pointer_t)(ptr - size))
+        {
+            GET(NEXT(linked_root)) = GET(NEXT(ptr));
+            insert_free_list(idx + 1, ptr - size);
+            return ptr;
+        }
+        if ((pointer_t)GET(NEXT(linked_root)) == (pointer_t)(ptr + size))
+        {
+            GET(NEXT(linked_root)) = GET(NEXT(ptr));
+            insert_free_list(idx + 1, ptr);
+            return ptr;
+        }
+    }
+}
 
+static void *extend_heap(size_t words)
+{
     size_t size = words % 2 ? (words + 1) * WSIZE : words * WSIZE;
     pointer_t bp = mem_sbrk(size);
-    if ((long)bp == -1)
+    int index = find_index(size);
+    if (bp == (void *)-1)
     {
         return NULL;
     }
     PUT(mem_heap_hi() - 3, PACK(0, 1));
+    return coalesce(bp, index, CHUNKSIZE);
 }
 
 int mm_init(void)
@@ -103,10 +152,14 @@ int mm_init(void)
     }
     for (int i = 0; i < 30; i++)
     {
-        segregated_free_list[i] = 0;
+        segregated_free_list[i] = NULL;
     }
     PUT(start_addr, 0);
-    PUT(start_addr + WSIZE, PACK(1, 0));
+    PUT(start_addr + 1, PACK(1, 0));
+    if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
+    {
+        return -1;
+    }
     return 0;
 }
 
@@ -114,7 +167,7 @@ size_t define_adjust_size(size_t size)
 {
     int n = 0;
     int flag = 0;
-    size = size + WSIZE;
+    size += WSIZE;
     while (1)
     {
         if (size == 1)
@@ -125,11 +178,41 @@ size_t define_adjust_size(size_t size)
             }
             break;
         }
-        flag = flag + (size % 2);
-        size = (size) / 2;
+        flag += size % 2;
+        size /= 2;
         n += 1;
     }
     return 1 << (n + 1);
+}
+void *divide_block(int index, int adjust_size)
+{
+    unsigned int *previous_block_bp;
+    unsigned int *next_block_bp;
+    while (1)
+    {
+        previous_block_bp = pop_free_list(index);
+        next_block_bp = (unsigned int *)((char *)previous_block_bp + (int)(1 << (index + 3)));
+        insert_free_list(index - 1, next_block_bp);
+        if ((int)(1 << (index + 3)) == adjust_size)
+        {
+            return previous_block_bp;
+        }
+        insert_free_list(index - 1, previous_block_bp);
+        index -= 1;
+    }
+    // while (1)
+    // {
+    //     char *popped_block = (char *)pop_free_list(idx);
+    //     size_t size = GET_SIZE(HDRP(popped_block));
+    //     PUT(popped_block + size / 2, PACK(size / 2, 0));
+    //     insert_free_list(idx - 1, popped_block + size / 2);
+    //     if (size / 2 == asize)
+    //     {
+    //         PUT(HDRP(bp), PACK(size, 1))
+    //         return popped_block;
+    //     }
+    //     insert_free_list(idx - 1, popped_block);
+    // }
 }
 
 void *mm_malloc(size_t size)
@@ -139,26 +222,29 @@ void *mm_malloc(size_t size)
         return NULL;
     }
     size_t adjust_size = define_adjust_size(size);
-    int index = find_index(adjust_size);
+    int index = find_free_index(adjust_size);
     if (!segregated_free_list[index])
     {
         size_t extend_size = MAX(adjust_size, CHUNKSIZE);
-        pointer_t bp = extend_heap((extend_size / WSIZE), adjust_size);
+        pointer_t bp = extend_heap((extend_size / WSIZE));
         if (bp == (void *)-1)
         {
             return NULL;
         }
-        index = find_index(adjust_size);
-        return (void *)delete_free_list(index, adjust_size);
+        return divide_block(index, adjust_size);
     }
-    return (void *)delete_free_list(index, adjust_size);
+    if (adjust_size == (int)(1 << (index + 3)))
+    {
+        return pop_free_list(index);
+    }
+    return divide_block(index, adjust_size);
 }
 
 void mm_free(void *ptr)
 {
     size_t size = GET_SIZE(HDRP(ptr));
     int index = find_index(size);
-    insert_free_list(index, ptr);
+    coalesce(ptr, index, size);
 }
 
 void *mm_realloc(void *ptr, size_t size)
